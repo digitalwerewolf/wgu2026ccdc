@@ -12,9 +12,11 @@ The virtual wire ONLY binds the data interfaces. Your VPN → ESXi access goes t
 
 **Preflight on competition day:**
 1. ESXi > Firewall VM > Edit Settings — note which adapter maps to which port group
-2. On the firewall CLI: `show interface management` — confirms the mgt IP (this is how you're connected)
-3. On the firewall CLI: `show interface all` — shows data interfaces and their status
-4. Only bind data interfaces (ethernet1/1, ethernet1/2) into your virtual wire. Never the mgt.
+2. **CHECK vSwitch SECURITY** — For vwire/L2: the data interface port groups MUST have Promiscuous Mode, MAC Address Changes, and Forged Transmits set to **Accept**. Without this, the firewall gets zero data traffic.
+3. On the firewall CLI: `show interface management` — confirms the mgt IP (this is how you're connected)
+4. On the firewall CLI: `debug show vm-series interfaces all` — shows the definitive vNIC-to-interface mapping
+5. On the firewall CLI: `show interface all` — shows data interfaces and their status
+6. Only bind data interfaces (ethernet1/1, ethernet1/2) into your virtual wire. Never the mgt.
 
 ---
 

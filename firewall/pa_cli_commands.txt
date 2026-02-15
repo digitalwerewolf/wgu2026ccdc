@@ -88,10 +88,45 @@ request anti-virus upgrade install version latest
 # ========================
 # Go to ESXi web UI > Select the firewall VM > Edit Settings
 # Note which Network Adapter maps to which port group.
+#
+# OFFICIAL MAPPING (VM-Series Deployment Guide, page 169):
+#   vNIC 1 (Network Adapter 1) = mgt (Ethernet 1/0) — NEVER TOUCH
+#   vNIC 2 (Network Adapter 2) = ethernet1/1 (eth1) — outside data
+#   vNIC 3 (Network Adapter 3) = ethernet1/2 (eth2) — inside data
+#
+# !! CHECK vSWITCH SECURITY SETTINGS (REQUIRED FOR VWIRE/L2) !!
+# In ESXi: Networking > Virtual Switches
+# For EACH port group connected to data interfaces (vNIC 2 and 3):
+#   Edit Settings > Security tab > Set ALL THREE to Accept:
+#     - Promiscuous Mode = Accept
+#     - MAC Address Changes = Accept
+#     - Forged Transmits = Accept
+# WITHOUT THIS, THE FIREWALL RECEIVES ZERO DATA TRAFFIC.
+# Do NOT change these on the management port group.
+#
+# Exception: L3 mode with hypervisor-assigned MAC (default) does NOT
+# need promiscuous mode. Only vwire and L2 need it.
+#
+# !! NEVER DO THESE !!
+# - NEVER run: set system setting mgmt-interface-swap enable yes
+#   (This swaps mgmt to a data interface — instant lockout)
+# - NEVER remove vNICs from the firewall VM (breaks interface mapping)
+# - NEVER use VMware snapshots on the firewall VM (causes packet loss)
+#   Use "Export named configuration snapshot" instead for backups.
+
 # Then on the firewall CLI, confirm:
 
 show interface management
 # This shows the mgt IP — this is your lifeline, DO NOT TOUCH
+
+debug show vm-series interfaces all
+# This shows the ACTUAL vNIC-to-interface mapping with MAC addresses
+# and PCI IDs. This is the definitive proof of which adapter is which.
+# Example output:
+#   Phoenix_interface  Base-OS_port  Base-OS_MAC           PCI-ID
+#   mgt                eth0          0e:xx:xx:xx:xx:xx     0000:00:04.0
+#   Ethernet1/1        eth1          0e:xx:xx:xx:xx:xx     0000:00:05.0
+#   Ethernet1/2        eth2          0e:xx:xx:xx:xx:xx     0000:00:06.0
 
 show interface all
 # This shows ethernet1/1, ethernet1/2, etc. and their status
@@ -99,6 +134,12 @@ show interface all
 # Only the DATA interfaces (ethernet1/1, ethernet1/2) go in the vwire.
 # If you see 3+ data interfaces, check the network diagram in the
 # team packet to decide which is outside and which is inside.
+
+# Verify no one has swapped the management interface:
+# If the debug output above shows "mgt(interface-swap)" next to eth0,
+# someone has enabled mgmt-interface-swap. This is dangerous.
+# To undo: set system setting mgmt-interface-swap enable no
+# Then: request restart system
 
 
 # ========================
