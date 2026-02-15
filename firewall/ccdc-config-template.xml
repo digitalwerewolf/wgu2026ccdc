@@ -1,0 +1,644 @@
+<?xml version="1.0"?>
+<!--
+  ALCCDC 2026 - Palo Alto NGFW Configuration Template
+  ====================================================
+  This is a PARTIAL configuration for import into PAN-OS.
+  
+  BEFORE LOADING: Replace ALL placeholders with real values from the team packet.
+  Placeholders use the format __PLACEHOLDER_NAME__
+  
+  Use deploy_config.sh to auto-replace and push, or manually edit and import.
+  
+  IMPORTANT: This config assumes VIRTUAL WIRE deployment mode.
+  If the topology requires Layer 3, you must modify the interface/zone sections.
+  
+  LOAD ORDER:
+    1. Change admin password FIRST (manual - cannot be in XML)
+    2. Save original config: save config to original-backup.xml
+    3. Import this file via API or SCP
+    4. Load: load config from ccdc-config.xml
+    5. Commit
+    6. VERIFY ALL SCORED SERVICES
+-->
+<config version="11.0.0" urldb="paloaltonetworks">
+
+  <!-- ============================================================ -->
+  <!-- DEVICE SETTINGS                                               -->
+  <!-- ============================================================ -->
+  <devices>
+    <entry name="localhost.localdomain">
+
+      <deviceconfig>
+        <system>
+          <hostname>Team__TEAM_NUM__-FW</hostname>
+          <login-banner>AUTHORIZED ACCESS ONLY - ALCCDC 2026 Team __TEAM_NUM__</login-banner>
+          <timezone>US/Central</timezone>
+          <dns-setting>
+            <servers>
+              <primary>__COMP_DNS_IP__</primary>
+              <secondary>8.8.8.8</secondary>
+            </servers>
+          </dns-setting>
+          <ntp-servers>
+            <primary-ntp-server>
+              <ntp-server-address>0.pool.ntp.org</ntp-server-address>
+            </primary-ntp-server>
+            <secondary-ntp-server>
+              <ntp-server-address>1.pool.ntp.org</ntp-server-address>
+            </secondary-ntp-server>
+          </ntp-servers>
+        </system>
+        <setting>
+          <logging>
+            <log-suppression>no</log-suppression>
+          </logging>
+        </setting>
+      </deviceconfig>
+
+      <!-- ============================================================ -->
+      <!-- NETWORK: VIRTUAL WIRE DEPLOYMENT                              -->
+      <!-- Adjust interface names if the VM has different eth ports       -->
+      <!-- ============================================================ -->
+      <network>
+        <interface>
+          <ethernet>
+            <entry name="ethernet1/1">
+              <virtual-wire>
+                <lldp>
+                  <enable>no</enable>
+                </lldp>
+              </virtual-wire>
+              <comment>Outside-facing interface (toward gateway/internet)</comment>
+            </entry>
+            <entry name="ethernet1/2">
+              <virtual-wire>
+                <lldp>
+                  <enable>no</enable>
+                </lldp>
+              </virtual-wire>
+              <comment>Inside-facing interface (toward team servers)</comment>
+            </entry>
+          </ethernet>
+        </interface>
+        <virtual-wire>
+          <entry name="default-vwire">
+            <interface1>ethernet1/1</interface1>
+            <interface2>ethernet1/2</interface2>
+          </entry>
+        </virtual-wire>
+      </network>
+
+      <vsys>
+        <entry name="vsys1">
+
+          <!-- ============================================================ -->
+          <!-- ZONES                                                         -->
+          <!-- ============================================================ -->
+          <zone>
+            <entry name="outside">
+              <network>
+                <virtual-wire>
+                  <member>ethernet1/1</member>
+                </virtual-wire>
+              </network>
+              <enable-packet-buffer-protection>yes</enable-packet-buffer-protection>
+            </entry>
+            <entry name="inside">
+              <network>
+                <virtual-wire>
+                  <member>ethernet1/2</member>
+                </virtual-wire>
+              </network>
+              <enable-packet-buffer-protection>yes</enable-packet-buffer-protection>
+            </entry>
+          </zone>
+
+          <!-- ============================================================ -->
+          <!-- SECURITY PROFILES                                             -->
+          <!-- ============================================================ -->
+
+          <!-- Antivirus Profile: reset-both on all decoders -->
+          <profiles>
+            <virus>
+              <entry name="CCDC-AV">
+                <decoder>
+                  <entry name="http">
+                    <action>reset-both</action>
+                    <wildfire-action>reset-both</wildfire-action>
+                  </entry>
+                  <entry name="http2">
+                    <action>reset-both</action>
+                    <wildfire-action>reset-both</wildfire-action>
+                  </entry>
+                  <entry name="smtp">
+                    <action>reset-both</action>
+                    <wildfire-action>reset-both</wildfire-action>
+                  </entry>
+                  <entry name="pop3">
+                    <action>reset-both</action>
+                    <wildfire-action>reset-both</wildfire-action>
+                  </entry>
+                  <entry name="imap">
+                    <action>reset-both</action>
+                    <wildfire-action>reset-both</wildfire-action>
+                  </entry>
+                  <entry name="ftp">
+                    <action>reset-both</action>
+                    <wildfire-action>reset-both</wildfire-action>
+                  </entry>
+                  <entry name="smb">
+                    <action>reset-both</action>
+                    <wildfire-action>reset-both</wildfire-action>
+                  </entry>
+                </decoder>
+                <description>CCDC competition AV profile - block all</description>
+              </entry>
+            </virus>
+
+            <!-- Anti-Spyware Profile: block critical/high/medium, DNS sinkhole -->
+            <spyware>
+              <entry name="CCDC-AS">
+                <rules>
+                  <entry name="block-critical">
+                    <severity>
+                      <member>critical</member>
+                    </severity>
+                    <action>
+                      <reset-both/>
+                    </action>
+                    <threat-name>any</threat-name>
+                    <category>any</category>
+                    <packet-capture>single-packet</packet-capture>
+                  </entry>
+                  <entry name="block-high">
+                    <severity>
+                      <member>high</member>
+                    </severity>
+                    <action>
+                      <reset-both/>
+                    </action>
+                    <threat-name>any</threat-name>
+                    <category>any</category>
+                    <packet-capture>single-packet</packet-capture>
+                  </entry>
+                  <entry name="block-medium">
+                    <severity>
+                      <member>medium</member>
+                    </severity>
+                    <action>
+                      <reset-both/>
+                    </action>
+                    <threat-name>any</threat-name>
+                    <category>any</category>
+                  </entry>
+                  <entry name="alert-low">
+                    <severity>
+                      <member>low</member>
+                    </severity>
+                    <action>
+                      <default-action/>
+                    </action>
+                    <threat-name>any</threat-name>
+                    <category>any</category>
+                  </entry>
+                  <entry name="alert-info">
+                    <severity>
+                      <member>informational</member>
+                    </severity>
+                    <action>
+                      <default-action/>
+                    </action>
+                    <threat-name>any</threat-name>
+                    <category>any</category>
+                  </entry>
+                </rules>
+                <botnet-domains>
+                  <lists>
+                    <entry name="default-paloalto-dns">
+                      <action>
+                        <sinkhole/>
+                      </action>
+                      <packet-capture>single-packet</packet-capture>
+                    </entry>
+                  </lists>
+                  <sinkhole>
+                    <ipv4-address>72.5.65.111</ipv4-address>
+                    <ipv6-address>2600:5200::1</ipv6-address>
+                  </sinkhole>
+                </botnet-domains>
+                <description>CCDC anti-spyware with DNS sinkholing</description>
+              </entry>
+            </spyware>
+
+            <!-- Vulnerability Protection Profile -->
+            <vulnerability>
+              <entry name="CCDC-VP">
+                <rules>
+                  <entry name="block-critical-high-medium">
+                    <severity>
+                      <member>critical</member>
+                      <member>high</member>
+                      <member>medium</member>
+                    </severity>
+                    <action>
+                      <reset-both/>
+                    </action>
+                    <threat-name>any</threat-name>
+                    <vendor-id>
+                      <member>any</member>
+                    </vendor-id>
+                    <cve>
+                      <member>any</member>
+                    </cve>
+                    <host>any</host>
+                    <category>any</category>
+                    <packet-capture>single-packet</packet-capture>
+                  </entry>
+                  <entry name="alert-low-info">
+                    <severity>
+                      <member>low</member>
+                      <member>informational</member>
+                    </severity>
+                    <action>
+                      <alert/>
+                    </action>
+                    <threat-name>any</threat-name>
+                    <vendor-id>
+                      <member>any</member>
+                    </vendor-id>
+                    <cve>
+                      <member>any</member>
+                    </cve>
+                    <host>any</host>
+                    <category>any</category>
+                  </entry>
+                </rules>
+                <description>CCDC vulnerability protection - block crit/high/med</description>
+              </entry>
+            </vulnerability>
+
+            <!-- URL Filtering Profile: block malicious categories -->
+            <url-filtering>
+              <entry name="CCDC-URL">
+                <credential-enforcement>
+                  <mode>
+                    <disabled/>
+                  </mode>
+                </credential-enforcement>
+                <block>
+                  <member>command-and-control</member>
+                  <member>dynamic-dns</member>
+                  <member>hacking</member>
+                  <member>high-risk</member>
+                  <member>malware</member>
+                  <member>phishing</member>
+                  <member>proxy-avoidance-and-anonymizers</member>
+                  <member>newly-registered-domain</member>
+                </block>
+                <alert>
+                  <member>unknown</member>
+                </alert>
+                <description>CCDC URL filtering - block known-bad categories</description>
+              </entry>
+            </url-filtering>
+
+            <!-- File Blocking Profile: block dangerous executables -->
+            <file-blocking>
+              <entry name="CCDC-FB">
+                <rules>
+                  <entry name="block-dangerous">
+                    <application>
+                      <member>any</member>
+                    </application>
+                    <file-type>
+                      <member>bat</member>
+                      <member>com</member>
+                      <member>dll</member>
+                      <member>exe</member>
+                      <member>hta</member>
+                      <member>msi</member>
+                      <member>pif</member>
+                      <member>scr</member>
+                      <member>vbs</member>
+                    </file-type>
+                    <direction>both</direction>
+                    <action>block</action>
+                  </entry>
+                  <entry name="alert-other">
+                    <application>
+                      <member>any</member>
+                    </application>
+                    <file-type>
+                      <member>any</member>
+                    </file-type>
+                    <direction>both</direction>
+                    <action>alert</action>
+                  </entry>
+                </rules>
+                <description>CCDC file blocking - block dangerous file types</description>
+              </entry>
+            </file-blocking>
+
+            <!-- WildFire Analysis Profile -->
+            <wildfire-analysis>
+              <entry name="CCDC-WF">
+                <rules>
+                  <entry name="Forward-All">
+                    <application>
+                      <member>any</member>
+                    </application>
+                    <file-type>
+                      <member>any</member>
+                    </file-type>
+                    <direction>both</direction>
+                    <analysis>public-cloud</analysis>
+                  </entry>
+                </rules>
+                <description>CCDC WildFire - forward unknowns for analysis</description>
+              </entry>
+            </wildfire-analysis>
+          </profiles>
+
+          <!-- Security Profile Group: bundles all profiles -->
+          <profile-group>
+            <entry name="CCDC-Profiles">
+              <virus>
+                <member>CCDC-AV</member>
+              </virus>
+              <spyware>
+                <member>CCDC-AS</member>
+              </spyware>
+              <vulnerability>
+                <member>CCDC-VP</member>
+              </vulnerability>
+              <url-filtering>
+                <member>CCDC-URL</member>
+              </url-filtering>
+              <file-blocking>
+                <member>CCDC-FB</member>
+              </file-blocking>
+              <wildfire-analysis>
+                <member>CCDC-WF</member>
+              </wildfire-analysis>
+            </entry>
+          </profile-group>
+
+          <!-- ============================================================ -->
+          <!-- SECURITY RULES (evaluated top-down, first match wins)         -->
+          <!--                                                               -->
+          <!-- ORDER:                                                        -->
+          <!--   1. Allow-Scoring        - NEVER block the scorebot          -->
+          <!--   2. Allow-ICMP           - Competition requires this         -->
+          <!--   3. Allow-CCSClient      - Monitoring agent outbound         -->
+          <!--   4. Allow-CompInfra      - Patch server, inject, DNS, proxy  -->
+          <!--   5. Allow-Scored-Svc     - Inbound to each scored service    -->
+          <!--   6. Allow-Outbound-Patch - Systems reaching patch server     -->
+          <!--   7. Deny-All-Log         - Default deny with logging         -->
+          <!--   8. Allow-All-Temp       - DISABLED safety net (enable if    -->
+          <!--                             scoring breaks after hardening)   -->
+          <!-- ============================================================ -->
+          <rulebase>
+            <security>
+              <rules>
+
+                <!-- RULE 1: Allow Scoring Subnet - ALWAYS FIRST -->
+                <entry name="Allow-Scoring">
+                  <from>
+                    <member>any</member>
+                  </from>
+                  <to>
+                    <member>any</member>
+                  </to>
+                  <source>
+                    <member>__SCORING_SUBNET__</member>
+                  </source>
+                  <destination>
+                    <member>any</member>
+                  </destination>
+                  <application>
+                    <member>any</member>
+                  </application>
+                  <service>
+                    <member>any</member>
+                  </service>
+                  <action>allow</action>
+                  <log-start>no</log-start>
+                  <log-end>yes</log-end>
+                  <description>Scoring engine - NEVER DISABLE THIS RULE</description>
+                </entry>
+
+                <!-- RULE 2: Allow ICMP from Competition Infrastructure -->
+                <entry name="Allow-ICMP">
+                  <from>
+                    <member>any</member>
+                  </from>
+                  <to>
+                    <member>any</member>
+                  </to>
+                  <source>
+                    <member>10.120.0.0/16</member>
+                    <member>10.110.0.0/16</member>
+                  </source>
+                  <destination>
+                    <member>any</member>
+                  </destination>
+                  <application>
+                    <member>ping</member>
+                    <member>icmp</member>
+                  </application>
+                  <service>
+                    <member>application-default</member>
+                  </service>
+                  <action>allow</action>
+                  <log-start>no</log-start>
+                  <log-end>yes</log-end>
+                  <description>Competition ICMP monitoring - required at all times</description>
+                </entry>
+
+                <!-- RULE 3: Allow CCSClient Outbound -->
+                <entry name="Allow-CCSClient">
+                  <from>
+                    <member>any</member>
+                  </from>
+                  <to>
+                    <member>any</member>
+                  </to>
+                  <source>
+                    <member>any</member>
+                  </source>
+                  <destination>
+                    <member>10.120.0.111</member>
+                  </destination>
+                  <application>
+                    <member>any</member>
+                  </application>
+                  <service>
+                    <member>service-http</member>
+                    <member>service-https</member>
+                  </service>
+                  <action>allow</action>
+                  <log-start>no</log-start>
+                  <log-end>yes</log-end>
+                  <description>CCSClient monitoring agent traffic</description>
+                </entry>
+
+                <!-- RULE 4: Allow Competition Infrastructure -->
+                <entry name="Allow-CompInfra">
+                  <from>
+                    <member>any</member>
+                  </from>
+                  <to>
+                    <member>any</member>
+                  </to>
+                  <source>
+                    <member>any</member>
+                  </source>
+                  <destination>
+                    <member>__PATCH_SERVER_IP__</member>
+                    <member>__INJECT_PORTAL_IP__</member>
+                    <member>__COMP_DNS_IP__</member>
+                    <member>__SYSLOG_IP__</member>
+                    <member>__PROXY_IP__</member>
+                  </destination>
+                  <application>
+                    <member>any</member>
+                  </application>
+                  <service>
+                    <member>any</member>
+                  </service>
+                  <action>allow</action>
+                  <log-start>no</log-start>
+                  <log-end>yes</log-end>
+                  <description>Competition infrastructure - patch, inject, DNS, syslog, proxy</description>
+                </entry>
+
+                <!-- RULE 5: Allow Inbound to Scored Services -->
+                <!-- Add each scored service IP here from the team packet -->
+                <entry name="Allow-Scored-Services">
+                  <from>
+                    <member>any</member>
+                  </from>
+                  <to>
+                    <member>any</member>
+                  </to>
+                  <source>
+                    <member>any</member>
+                  </source>
+                  <destination>
+                    <member>__SVC_DNS_IP__</member>
+                    <member>__SVC_MAIL_IP__</member>
+                    <member>__SVC_WEB1_IP__</member>
+                    <member>__SVC_WEB2_IP__</member>
+                    <member>__SVC_FTP_IP__</member>
+                    <member>__SVC_ECOMM_IP__</member>
+                  </destination>
+                  <application>
+                    <member>any</member>
+                  </application>
+                  <service>
+                    <member>any</member>
+                  </service>
+                  <action>allow</action>
+                  <log-start>no</log-start>
+                  <log-end>yes</log-end>
+                  <profile-setting>
+                    <group>
+                      <member>CCDC-Profiles</member>
+                    </group>
+                  </profile-setting>
+                  <description>Inbound to all scored service IPs with threat inspection</description>
+                </entry>
+
+                <!-- RULE 6: Allow Outbound to Patch Server -->
+                <entry name="Allow-Outbound-Patch">
+                  <from>
+                    <member>inside</member>
+                  </from>
+                  <to>
+                    <member>outside</member>
+                  </to>
+                  <source>
+                    <member>any</member>
+                  </source>
+                  <destination>
+                    <member>__PATCH_SERVER_IP__</member>
+                  </destination>
+                  <application>
+                    <member>any</member>
+                  </application>
+                  <service>
+                    <member>any</member>
+                  </service>
+                  <action>allow</action>
+                  <log-start>no</log-start>
+                  <log-end>yes</log-end>
+                  <description>Allow systems to reach patch server for updates/tools</description>
+                </entry>
+
+                <!-- RULE 7: Deny-All with Logging (catch what falls through) -->
+                <entry name="Deny-All-Log">
+                  <from>
+                    <member>any</member>
+                  </from>
+                  <to>
+                    <member>any</member>
+                  </to>
+                  <source>
+                    <member>any</member>
+                  </source>
+                  <destination>
+                    <member>any</member>
+                  </destination>
+                  <application>
+                    <member>any</member>
+                  </application>
+                  <service>
+                    <member>any</member>
+                  </service>
+                  <action>deny</action>
+                  <log-start>no</log-start>
+                  <log-end>yes</log-end>
+                  <description>Default deny - log everything that hits this for visibility</description>
+                </entry>
+
+                <!-- RULE 8: Allow-All-Temp SAFETY NET (starts DISABLED) -->
+                <!-- Enable this if scoring breaks: -->
+                <!--   set rulebase security rules Allow-All-Temp disabled no -->
+                <!--   commit                                                 -->
+                <entry name="Allow-All-Temp">
+                  <from>
+                    <member>any</member>
+                  </from>
+                  <to>
+                    <member>any</member>
+                  </to>
+                  <source>
+                    <member>any</member>
+                  </source>
+                  <destination>
+                    <member>any</member>
+                  </destination>
+                  <application>
+                    <member>any</member>
+                  </application>
+                  <service>
+                    <member>any</member>
+                  </service>
+                  <action>allow</action>
+                  <disabled>yes</disabled>
+                  <log-start>yes</log-start>
+                  <log-end>yes</log-end>
+                  <description>EMERGENCY ONLY - enable if scoring breaks after hardening</description>
+                </entry>
+
+              </rules>
+            </security>
+          </rulebase>
+
+        </entry>
+      </vsys>
+
+    </entry>
+  </devices>
+
+</config>
