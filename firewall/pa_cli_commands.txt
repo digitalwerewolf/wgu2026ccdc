@@ -1,0 +1,266 @@
+# ============================================================
+# ALCCDC 2026 - Palo Alto CLI Commands (Manual Fallback)
+# ============================================================
+#
+# !!! CRITICAL: DO NOT PUT ESXI BEHIND THE FIREWALL !!!
+#
+# Before configuring ANY interfaces, go to ESXi > VM Settings
+# for the firewall VM and note which Network Adapter maps to
+# which port group:
+#
+#   Network Adapter 1 = mgt (management) — DO NOT TOUCH THIS
+#   Network Adapter 2 = ethernet1/1 (data — outside)
+#   Network Adapter 3 = ethernet1/2 (data — inside)
+#
+# The virtual wire ONLY binds ethernet1/1 <-> ethernet1/2.
+# The mgt interface is separate and is how YOU reach the FW.
+# Your VPN -> ESXi path does NOT go through the data interfaces.
+#
+# NEVER edit ESXi vSwitch/port group settings for the FW VM.
+# NEVER move the mgt adapter to a different port group.
+# If unsure which interface is which, check:
+#   Web UI > Network > Interfaces (shows adapter mapping)
+#   CLI: show interface management (shows mgt IP)
+#   CLI: show interface all (shows all interface status)
+#
+# ============================================================
+# Use this if Python scripts can't reach the firewall.
+# Person B reads aloud, Person A types with Tab completion.
+#
+# Replace ALL placeholders before competition day:
+#   <TEAM_NUM>        -> your team number
+#   <FW_MGMT_IP>      -> firewall management IP
+#   <NEW_PASSWORD>     -> new admin password
+#   <SCORING_SUBNET>   -> scoring engine subnet (e.g. 192.168.28.0/24)
+#   <SVC_IP_x>        -> each scored service IP from team packet
+#   <CCS_IP>          -> CCSClient IP
+#   <SYSLOG_IP>       -> syslog target IP
+#   <PATCH_IP>        -> patch server IP
+#   <INJECT_IP>       -> inject portal IP
+#   <DNS_IP>          -> competition DNS IP
+#   <PROXY_IP>        -> outbound proxy IP
+# ============================================================
+
+
+# ========================
+# PHASE 0: SECURE THE BOX
+# ========================
+
+configure
+set mgt-config users admin password
+# (type new password when prompted, then confirm)
+commit
+
+save config to original-backup.xml
+
+set deviceconfig system hostname Team<TEAM_NUM>-FW
+commit
+
+
+# ========================
+# PHASE 1: LICENSING & UPDATES  (skip if slow, come back later)
+# ========================
+
+request license fetch
+
+request content upgrade check
+request content upgrade download latest
+request content upgrade install version latest
+
+request anti-virus upgrade check
+request anti-virus upgrade download latest
+request anti-virus upgrade install version latest
+
+
+# ========================
+# PHASE 2: PREFLIGHT — IDENTIFY INTERFACES (DO THIS FIRST)
+# ========================
+# Go to ESXi web UI > Select the firewall VM > Edit Settings
+# Note which Network Adapter maps to which port group.
+# Then on the firewall CLI, confirm:
+
+show interface management
+# This shows the mgt IP — this is your lifeline, DO NOT TOUCH
+
+show interface all
+# This shows ethernet1/1, ethernet1/2, etc. and their status
+# Match these to the ESXi network adapters.
+# Only the DATA interfaces (ethernet1/1, ethernet1/2) go in the vwire.
+# If you see 3+ data interfaces, check the network diagram in the
+# team packet to decide which is outside and which is inside.
+
+
+# ========================
+# PHASE 2: INTERFACES & ZONES (Virtual Wire)
+# ========================
+# Check Web UI > Network > Interfaces for actual interface names.
+# Adjust ethernet1/1 and ethernet1/2 if your VM has different names.
+
+configure
+
+set network interface ethernet ethernet1/1 virtual-wire
+set network interface ethernet ethernet1/2 virtual-wire
+set network virtual-wire default-vwire interfaces [ ethernet1/1 ethernet1/2 ]
+set zone outside network virtual-wire [ ethernet1/1 ]
+set zone inside network virtual-wire [ ethernet1/2 ]
+
+commit
+
+# ========================
+# PHASE 2-ALT: INTERFACES & ZONES (Layer 3 — if packet requires routing)
+# ========================
+# Only use this if vwire doesn't fit the topology.
+# Replace IPs with your actual assigned gateway IPs.
+#
+# configure
+# set network interface ethernet ethernet1/1 layer3 ip <OUTSIDE_IP>/24
+# set network interface ethernet ethernet1/2 layer3 ip <INSIDE_IP>/24
+# set zone outside network layer3 [ ethernet1/1 ]
+# set zone inside network layer3 [ ethernet1/2 ]
+# set network virtual-router default interface [ ethernet1/1 ethernet1/2 ]
+# set network virtual-router default routing-table ip static-route default nexthop ip-address <UPSTREAM_GW> interface ethernet1/1 destination 0.0.0.0/0
+# commit
+
+
+# ========================
+# PHASE 3: ALLOW-ALL SAFETY NET
+# ========================
+
+configure
+set rulebase security rules Allow-All-Temp from any to any source any destination any application any service any action allow log-start yes log-end yes
+commit
+
+# >>> STOP AND VERIFY ALL SCORED SERVICES <<<
+
+
+# ========================
+# PHASE 4: SPECIFIC ALLOW RULES
+# ========================
+
+configure
+
+# Scoring subnet — NEVER BLOCK
+set rulebase security rules Allow-Scoring from any to any source <SCORING_SUBNET> destination any application any service any action allow log-end yes
+
+# ICMP from competition infrastructure (CONFIRMED 2026 requirement)
+set rulebase security rules Allow-Comp-ICMP from any to any source [ 10.120.0.0/16 10.110.0.0/16 ] destination any application ping service application-default action allow log-end yes
+
+# CCSClient monitoring (if applicable)
+set rulebase security rules Allow-CCSClient from any to any source any destination <CCS_IP> application any service [ service-http service-https ] action allow log-end yes
+
+# Competition infrastructure outbound
+set rulebase security rules Allow-CompInfra from any to any source any destination [ <SYSLOG_IP> <PATCH_IP> <INJECT_IP> <DNS_IP> <PROXY_IP> ] application any service any action allow log-end yes
+
+# Scored service rules — one per service or group by protocol:
+# Adjust IPs and apps based on the actual team packet.
+
+# Example: DNS service
+# set rulebase security rules Allow-DNS from any to any source any destination <DNS_SVC_IP> application dns service application-default action allow log-end yes
+
+# Example: HTTP services (group all web server IPs)
+# set rulebase security rules Allow-HTTP from any to any source any destination [ <HTTP_IP_1> <HTTP_IP_2> <HTTP_IP_3> ] application web-browsing service service-http action allow log-end yes
+
+# Example: SSH services
+# set rulebase security rules Allow-SSH from any to any source any destination [ <SSH_IP_1> <SSH_IP_2> ] application ssh service application-default action allow log-end yes
+
+# Example: SMTP
+# set rulebase security rules Allow-SMTP from any to any source any destination <SMTP_IP> application smtp service application-default action allow log-end yes
+
+# Example: POP3
+# set rulebase security rules Allow-POP3 from any to any source any destination <POP3_IP> application pop3 service application-default action allow log-end yes
+
+# Example: FTP
+# set rulebase security rules Allow-FTP from any to any source any destination <FTP_IP> application ftp service application-default action allow log-end yes
+
+commit
+
+# >>> VERIFY ALL SCORED SERVICES AGAIN <<<
+
+
+# ========================
+# PHASE 5: DISABLE ALLOW-ALL
+# ========================
+
+configure
+set rulebase security rules Allow-All-Temp disabled yes
+commit
+
+# >>> VERIFY IMMEDIATELY — if anything breaks: <<<
+# configure
+# set rulebase security rules Allow-All-Temp disabled no
+# commit
+
+
+# ========================
+# PHASE 6: ATTACH SECURITY PROFILES
+# ========================
+# Best done via Web UI (Objects > Security Profiles) but here's CLI:
+
+configure
+
+# Attach built-in "strict" profiles directly to rules:
+# (If you created custom profiles via pa_phase2_profiles.py, use CCDC-Block group instead)
+
+set rulebase security rules Allow-Scoring profile-setting profiles virus default
+set rulebase security rules Allow-Scoring profile-setting profiles spyware strict
+set rulebase security rules Allow-Scoring profile-setting profiles vulnerability strict
+
+# Repeat for each Allow-* rule...
+
+# Enable logging on default deny rules
+set rulebase default-rules interzone-default log-end yes
+set rulebase default-rules intrazone-default log-end yes
+
+commit
+
+
+# ========================
+# MONITORING COMMANDS (operational mode, not configure)
+# ========================
+
+show system info
+show interface all
+show running security-policy
+show session all
+show session all filter source <SUSPICIOUS_IP>
+show counter global
+show log traffic
+show log threat
+
+# Check for rogue admin accounts
+show admins all
+
+# Save config backup at end of day
+save config to day1-end.xml
+
+
+# ========================
+# EMERGENCY: SCORING BREAKS
+# ========================
+
+configure
+set rulebase security rules Allow-All-Temp disabled no
+commit
+
+# Then check:
+# show log traffic direction equal backward action equal deny
+
+
+# ========================
+# EMERGENCY: FACTORY RESET (absolute last resort)
+# ========================
+# request system private-data-reset
+# (This wipes ALL config — only if firewall is fully compromised)
+
+
+# ========================
+# DAY 2 MORNING
+# ========================
+
+configure
+set mgt-config users admin password
+# (new password)
+commit
+
+show admins all
+# (check for rogue accounts)

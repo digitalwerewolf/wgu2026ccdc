@@ -1,0 +1,36 @@
+{
+    "_README": "Fill in ALL values from the 2026 team packet before running scripts. Any value with < > must be replaced.",
+
+    "team_number": "<TEAM_NUM>",
+    "fw_mgmt_ip": "<FW_MGMT_IP>",
+    "admin_user": "admin",
+    "admin_password": "<NEW_ADMIN_PASSWORD>",
+
+    "deployment_mode": "vwire",
+    "outside_interface": "ethernet1/1",
+    "inside_interface": "ethernet1/2",
+
+    "always_allow": {
+        "scoring_subnet": "<SCORING_SUBNET>",
+        "icmp_sources": ["10.120.0.0/16", "10.110.0.0/16"],
+        "infrastructure": {
+            "patch_server":   "<PATCH_SERVER_IP>",
+            "inject_portal":  "<INJECT_PORTAL_IP>",
+            "comp_dns":       "<COMP_DNS_IP>",
+            "outbound_proxy": "<PROXY_IP>",
+            "ccs_client":     "<CCS_IP>",
+            "syslog_target":  "<SYSLOG_IP>"
+        }
+    },
+
+    "scored_services": [
+        {"name": "example-dns",  "ip": "<IP>", "ports": ["53"],  "app": "dns"},
+        {"name": "example-http", "ip": "<IP>", "ports": ["80"],  "app": "web-browsing"},
+        {"name": "example-ssh",  "ip": "<IP>", "ports": ["22"],  "app": "ssh"},
+        {"name": "example-smtp", "ip": "<IP>", "ports": ["25"],  "app": "smtp"},
+        {"name": "example-pop3", "ip": "<IP>", "ports": ["110"], "app": "pop3"},
+        {"name": "example-ftp",  "ip": "<IP>", "ports": ["21"],  "app": "ftp"}
+    ],
+
+    "_scored_services_help": "Delete the examples above and add one entry per scored service from the team packet. The 'app' field is the PAN-OS App-ID name. Common ones: dns, web-browsing, ssl, ssh, smtp, pop3, ftp, imap, mysql, ms-sql-s, ping."
+}
