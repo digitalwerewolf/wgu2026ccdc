@@ -117,8 +117,17 @@ The management interface might be on a separate subnet. Try:
 # Get API key
 ./pa_monitor.sh --keygen <FW_IP> admin <PASSWORD>
 
-# Export config backup
-./pa_utils.sh <FW_IP> <API_KEY> backup my-backup.xml
+# Export encrypted config backup (GPG AES-256)
+./pa_utils.sh <FW_IP> <API_KEY> backup "YourGPGPassphrase"
+
+# Export plaintext backup (not recommended — only if GPG unavailable)
+./pa_utils.sh <FW_IP> <API_KEY> backup
+
+# List all local backups + on-firewall saved configs
+./pa_utils.sh <FW_IP> <API_KEY> backup-list
+
+# Restore from encrypted backup
+./pa_utils.sh <FW_IP> <API_KEY> restore ~/.sys_abc123_20260228.enc "YourGPGPassphrase"
 
 # Check for rogue admin accounts
 ./pa_utils.sh <FW_IP> <API_KEY> admins

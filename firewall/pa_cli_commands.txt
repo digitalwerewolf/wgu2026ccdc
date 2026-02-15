@@ -56,6 +56,17 @@ save config to original-backup.xml
 set deviceconfig system hostname Team<TEAM_NUM>-FW
 commit
 
+# Set the master key — encrypts passwords in all config exports
+# MUST be exactly 16 characters. Do this BEFORE any config export.
+# Web UI: Device > Master Key and Diagnostics
+# Write the master key on paper with the admin password.
+# WARNING: If the master key expires and you don't remember it,
+# you can only recover via serial console (factory reset).
+
+# Restrict management access (do this after confirming script connectivity):
+# set deviceconfig system permitted-ip <DEBIAN_BOX_IP>/32
+# commit
+
 
 # ========================
 # PHASE 1: LICENSING & UPDATES  (skip if slow, come back later)
@@ -230,8 +241,14 @@ show log threat
 # Check for rogue admin accounts
 show admins all
 
-# Save config backup at end of day
+# Save config backup at end of day (named save on firewall for fast rollback)
 save config to day1-end.xml
+
+# For encrypted off-box backup, run from Debian box:
+# ./pa_utils.sh <FW_IP> <API_KEY> backup "YourGPGPassphrase"
+# (stores encrypted in ~/.sys_<random>_<timestamp>.enc)
+# To list all backups:
+# ./pa_utils.sh <FW_IP> <API_KEY> backup-list
 
 
 # ========================

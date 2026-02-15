@@ -1,0 +1,41 @@
+{
+    "_README": "EXAMPLE config for dry-run testing. These are fake IPs. Replace with real values from the team packet before actual competition use.",
+
+    "team_number": "5",
+    "fw_mgmt_ip": "192.168.1.1",
+    "admin_user": "admin",
+    "admin_password": "TestPassword123!",
+
+    "deployment_mode": "vwire",
+    "outside_interface": "ethernet1/1",
+    "inside_interface": "ethernet1/2",
+
+    "always_allow": {
+        "scoring_subnet": "192.168.28.0/24",
+        "icmp_sources": ["10.120.0.0/16", "10.110.0.0/16"],
+        "infrastructure": {
+            "patch_server":   "10.120.0.9",
+            "inject_portal":  "10.120.0.20",
+            "comp_dns":       "10.120.0.53",
+            "outbound_proxy": "10.120.0.200",
+            "ccs_client":     "10.120.0.111",
+            "syslog_target":  "10.120.0.201"
+        }
+    },
+
+    "scored_services": [
+        {"name": "dns",       "ip": "10.50.50.5",   "ports": ["53"],  "app": "dns"},
+        {"name": "smtp",      "ip": "10.50.50.10",  "ports": ["25"],  "app": "smtp"},
+        {"name": "pop3",      "ip": "10.50.50.10",  "ports": ["110"], "app": "pop3"},
+        {"name": "web1",      "ip": "10.50.50.15",  "ports": ["80"],  "app": "web-browsing"},
+        {"name": "web2",      "ip": "10.50.50.20",  "ports": ["80"],  "app": "web-browsing"},
+        {"name": "web3",      "ip": "10.50.50.25",  "ports": ["80"],  "app": "web-browsing"},
+        {"name": "web4",      "ip": "10.50.50.30",  "ports": ["80"],  "app": "web-browsing"},
+        {"name": "ssh1",      "ip": "10.50.50.50",  "ports": ["22"],  "app": "ssh"},
+        {"name": "ssh2",      "ip": "10.50.50.51",  "ports": ["22"],  "app": "ssh"},
+        {"name": "ftp",       "ip": "10.50.50.52",  "ports": ["21"],  "app": "ftp"},
+        {"name": "helpdesk",  "ip": "10.50.50.54",  "ports": ["80"],  "app": "web-browsing"},
+        {"name": "remote-web","ip": "172.16.50.11", "ports": ["80"],  "app": "web-browsing"},
+        {"name": "remote-ssh","ip": "172.16.50.12", "ports": ["22"],  "app": "ssh"}
+    ]
+}

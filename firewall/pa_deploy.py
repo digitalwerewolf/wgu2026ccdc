@@ -29,17 +29,22 @@ import xml.etree.ElementTree as ET
 # ============================================================
 
 class PANOSFirewall:
-    def __init__(self, host, password, user="admin"):
+    def __init__(self, host, password, user="admin", dry_run=False):
         self.host = host
         self.base_url = f"https://{host}/api/"
         self.user = user
         self.password = password
         self.key = None
+        self.dry_run = dry_run
+        self.dry_run_log = []  # Stores all would-be API calls
         self.ctx = ssl.create_default_context()
         self.ctx.check_hostname = False
         self.ctx.verify_mode = ssl.CERT_NONE
 
     def _request(self, params):
+        if self.dry_run:
+            self.dry_run_log.append(params)
+            return '<response status="success"><result/></response>'
         url = self.base_url + "?" + urllib.parse.urlencode(params)
         req = urllib.request.Request(url)
         try:
@@ -50,6 +55,10 @@ class PANOSFirewall:
             return None
 
     def get_api_key(self):
+        if self.dry_run:
+            self.key = "DRY-RUN-FAKE-API-KEY"
+            print("[+] DRY RUN: Skipping authentication (no firewall contact)")
+            return True
         print("[*] Authenticating to firewall...")
         params = {
             "type": "keygen",
@@ -71,6 +80,10 @@ class PANOSFirewall:
             return False
 
     def set_config(self, xpath, element):
+        if self.dry_run:
+            print(f"  [DRY RUN] Would set xpath: {xpath[:80]}...")
+            self.dry_run_log.append({"action": "set", "xpath": xpath, "element": element})
+            return True
         params = {
             "type": "config",
             "action": "set",
@@ -91,6 +104,9 @@ class PANOSFirewall:
             return False
 
     def commit(self):
+        if self.dry_run:
+            print("[DRY RUN] Would commit configuration")
+            return True
         params = {
             "type": "commit",
             "cmd": "<commit></commit>",
@@ -130,12 +146,40 @@ class PANOSFirewall:
         return False
 
     def op_command(self, cmd):
+        if self.dry_run:
+            print(f"  [DRY RUN] Would run op command: {cmd[:80]}...")
+            return '<response status="success"><result/></response>'
         params = {
             "type": "op",
             "cmd": cmd,
             "key": self.key
         }
         return self._request(params)
+
+    def dump_dry_run(self, filename=None):
+        """Print or save all would-be API calls from a dry run."""
+        if not self.dry_run_log:
+            print("[*] No API calls recorded.")
+            return
+        output_lines = []
+        output_lines.append(f"\n{'='*60}")
+        output_lines.append(f"  DRY RUN SUMMARY: {len(self.dry_run_log)} API calls")
+        output_lines.append(f"{'='*60}\n")
+        for i, call in enumerate(self.dry_run_log, 1):
+            if isinstance(call, dict) and "xpath" in call:
+                output_lines.append(f"--- Call {i}: {call['action'].upper()} ---")
+                output_lines.append(f"  XPath: {call['xpath']}")
+                output_lines.append(f"  Element: {call['element'][:200]}...")
+            else:
+                output_lines.append(f"--- Call {i} ---")
+                output_lines.append(f"  Params: {call}")
+            output_lines.append("")
+        text = "\n".join(output_lines)
+        print(text)
+        if filename:
+            with open(filename, "w") as f:
+                f.write(text)
+            print(f"[+] Dry run log saved to {filename}")
 
 
 # ============================================================
@@ -177,15 +221,19 @@ def rule_xpath(rule_name):
 # Deployment Logic
 # ============================================================
 
-def deploy_from_config(config):
+def deploy_from_config(config, dry_run=False):
     """Run full deployment from a config dict."""
     fw_ip = config["fw_mgmt_ip"]
     password = config["admin_password"]
     user = config.get("admin_user", "admin")
 
     print(f"\n{'='*60}")
-    print(f"  ALCCDC 2026 - Palo Alto Rapid Deployment")
-    print(f"  Target: {fw_ip}")
+    if dry_run:
+        print(f"  ALCCDC 2026 - DRY RUN (no firewall contact)")
+        print(f"  Target would be: {fw_ip}")
+    else:
+        print(f"  ALCCDC 2026 - Palo Alto Rapid Deployment")
+        print(f"  Target: {fw_ip}")
     print(f"{'='*60}")
     print(f"")
     print(f"  ** SAFETY CHECK **")
@@ -202,7 +250,7 @@ def deploy_from_config(config):
     print(f"       (mgt is separate — never touch it)")
     print(f"")
 
-    fw = PANOSFirewall(fw_ip, password, user)
+    fw = PANOSFirewall(fw_ip, password, user, dry_run=dry_run)
     if not fw.get_api_key():
         print("\n[!] FATAL: Cannot authenticate. Check IP and password.")
         print("    Did you change the password via CLI first?")
@@ -290,13 +338,19 @@ def deploy_from_config(config):
     print(f"  Rules pushed: {success_count}")
     print(f"  Failures:     {fail_count}")
     print(f"{'='*60}")
-    print(f"\n[!] NEXT STEPS:")
-    print(f"    1. VERIFY ALL SCORED SERVICES from the External View VM")
-    print(f"    2. If everything works, disable Allow-All-Temp via CLI:")
-    print(f"       configure")
-    print(f"       set rulebase security rules Allow-All-Temp disabled yes")
-    print(f"       commit")
-    print(f"    3. Run pa_phase2_profiles.py to add threat prevention")
+
+    if dry_run:
+        fw.dump_dry_run("dry_run_output.txt")
+        print(f"\n[*] DRY RUN complete. No changes were made to any firewall.")
+        print(f"[*] Review the API calls above to verify correctness.")
+    else:
+        print(f"\n[!] NEXT STEPS:")
+        print(f"    1. VERIFY ALL SCORED SERVICES from the External View VM")
+        print(f"    2. If everything works, disable Allow-All-Temp via CLI:")
+        print(f"       configure")
+        print(f"       set rulebase security rules Allow-All-Temp disabled yes")
+        print(f"       commit")
+        print(f"    3. Run pa_phase2_profiles.py to add threat prevention")
 
 
 def deploy_minimal(fw_ip, password, team_num):
@@ -371,7 +425,13 @@ def print_usage():
     print()
     print("Usage:")
     print(f"  python3 {sys.argv[0]} --config team_config.json")
+    print(f"  python3 {sys.argv[0]} --config team_config.json --dry-run")
     print(f"  python3 {sys.argv[0]} <FW_MGMT_IP> <ADMIN_PASSWORD> <TEAM_NUMBER>")
+    print()
+    print("Options:")
+    print("  --config FILE   Use a JSON config file (recommended)")
+    print("  --dry-run       Validate config and show what would be pushed")
+    print("                  without contacting any firewall")
     print()
     print("The --config method is recommended. Fill in team_config.json")
     print("with real values from the team packet before running.")
@@ -381,31 +441,41 @@ if __name__ == "__main__":
         print_usage()
         sys.exit(1)
 
-    if sys.argv[1] == "--config":
-        if len(sys.argv) < 3:
+    dry_run = "--dry-run" in sys.argv
+    args = [a for a in sys.argv[1:] if a != "--dry-run"]
+
+    if not args:
+        print_usage()
+        sys.exit(1)
+
+    if args[0] == "--config":
+        if len(args) < 2:
             print("Error: --config requires a path to the config file")
             print(f"  python3 {sys.argv[0]} --config team_config.json")
             sys.exit(1)
 
-        config = load_config(sys.argv[2])
+        config = load_config(args[1])
         warnings = validate_config(config)
         if warnings:
             print("\n[!] CONFIG WARNINGS:")
             for w in warnings:
                 print(f"    - {w}")
             print()
-            resp = input("Continue anyway? (y/n): ").strip().lower()
-            if resp != "y":
-                print("Aborted.")
-                sys.exit(0)
+            if not dry_run:
+                resp = input("Continue anyway? (y/n): ").strip().lower()
+                if resp != "y":
+                    print("Aborted.")
+                    sys.exit(0)
+            else:
+                print("[*] Continuing in dry-run mode despite warnings...")
 
-        deploy_from_config(config)
+        deploy_from_config(config, dry_run=dry_run)
 
-    elif sys.argv[1] in ("-h", "--help"):
+    elif args[0] in ("-h", "--help"):
         print_usage()
 
     else:
-        if len(sys.argv) < 4:
+        if len(args) < 3:
             print_usage()
             sys.exit(1)
-        deploy_minimal(sys.argv[1], sys.argv[2], sys.argv[3])
+        deploy_minimal(args[0], args[1], args[2])

@@ -24,17 +24,22 @@ import xml.etree.ElementTree as ET
 
 class PANOSFirewall:
     """Minimal PAN-OS XML API client (stdlib only)."""
-    def __init__(self, host, password, user="admin"):
+    def __init__(self, host, password, user="admin", dry_run=False):
         self.host = host
         self.base_url = f"https://{host}/api/"
         self.user = user
         self.password = password
         self.key = None
+        self.dry_run = dry_run
+        self.dry_run_log = []
         self.ctx = ssl.create_default_context()
         self.ctx.check_hostname = False
         self.ctx.verify_mode = ssl.CERT_NONE
 
     def _request(self, params):
+        if self.dry_run:
+            self.dry_run_log.append(params)
+            return '<response status="success"><result><entry name="Allow-Scoring"><action>allow</action></entry><entry name="Allow-Comp-ICMP"><action>allow</action></entry><entry name="Allow-CCSClient"><action>allow</action></entry><entry name="Allow-CompInfra"><action>allow</action></entry><entry name="Allow-Scored-Inbound"><action>allow</action></entry></result></response>'
         url = self.base_url + "?" + urllib.parse.urlencode(params)
         req = urllib.request.Request(url)
         try:
@@ -45,6 +50,10 @@ class PANOSFirewall:
             return None
 
     def get_api_key(self):
+        if self.dry_run:
+            self.key = "DRY-RUN-FAKE-API-KEY"
+            print("[+] DRY RUN: Skipping authentication")
+            return True
         params = {"type": "keygen", "user": self.user, "password": self.password}
         result = self._request(params)
         if result is None:
@@ -59,6 +68,10 @@ class PANOSFirewall:
         return False
 
     def set_config(self, xpath, element):
+        if self.dry_run:
+            print(f"  [DRY RUN] Would set: {xpath.split('/')[-1][:60]}")
+            self.dry_run_log.append({"action": "set", "xpath": xpath, "element": element})
+            return True
         params = {
             "type": "config", "action": "set",
             "xpath": xpath, "element": element, "key": self.key
@@ -69,6 +82,9 @@ class PANOSFirewall:
         return "success" in result
 
     def get_config(self, xpath):
+        if self.dry_run:
+            # Return fake rules so attach_profiles_to_rules has something to iterate
+            return '<response status="success"><result><rules><entry name="Allow-Scoring"/><entry name="Allow-Comp-ICMP"/><entry name="Allow-CCSClient"/><entry name="Allow-CompInfra"/><entry name="Allow-Scored-Inbound"/><entry name="Allow-All-Temp"/></rules></result></response>'
         params = {
             "type": "config", "action": "get",
             "xpath": xpath, "key": self.key
@@ -76,6 +92,10 @@ class PANOSFirewall:
         return self._request(params)
 
     def commit(self):
+        if self.dry_run:
+            print("[DRY RUN] Would commit configuration")
+            print(f"[*] DRY RUN complete. {len(self.dry_run_log)} API calls would have been made.")
+            return True
         params = {"type": "commit", "cmd": "<commit></commit>", "key": self.key}
         print("[*] Committing...")
         result = self._request(params)
@@ -279,26 +299,33 @@ def main():
     if len(sys.argv) < 2:
         print("Usage:")
         print(f"  python3 {sys.argv[0]} --config team_config.json")
+        print(f"  python3 {sys.argv[0]} --config team_config.json --dry-run")
         print(f"  python3 {sys.argv[0]} <FW_MGMT_IP> <ADMIN_PASSWORD>")
         sys.exit(1)
 
-    if sys.argv[1] == "--config":
-        with open(sys.argv[2]) as f:
+    dry_run = "--dry-run" in sys.argv
+    args = [a for a in sys.argv[1:] if a != "--dry-run"]
+
+    if args[0] == "--config":
+        with open(args[1]) as f:
             config = json.load(f)
         fw_ip = config["fw_mgmt_ip"]
         pw = config["admin_password"]
         user = config.get("admin_user", "admin")
     else:
-        fw_ip = sys.argv[1]
-        pw = sys.argv[2]
+        fw_ip = args[0]
+        pw = args[1]
         user = "admin"
 
     print(f"\n{'='*60}")
-    print(f"  ALCCDC 2026 - Phase 2: Security Profiles")
+    if dry_run:
+        print(f"  ALCCDC 2026 - Phase 2: Security Profiles (DRY RUN)")
+    else:
+        print(f"  ALCCDC 2026 - Phase 2: Security Profiles")
     print(f"  Target: {fw_ip}")
     print(f"{'='*60}\n")
 
-    fw = PANOSFirewall(fw_ip, pw, user)
+    fw = PANOSFirewall(fw_ip, pw, user, dry_run=dry_run)
     if not fw.get_api_key():
         print("[!] FATAL: Cannot authenticate.")
         sys.exit(1)
@@ -313,8 +340,11 @@ def main():
     print(f"\n{'='*60}")
     print(f"  PHASE 2 COMPLETE")
     print(f"{'='*60}")
-    print(f"\n[!] VERIFY ALL SCORED SERVICES ARE STILL WORKING")
-    print(f"[!] If anything broke, remove the profile group from that rule via Web UI")
+    if dry_run:
+        print(f"\n[*] DRY RUN complete. No changes were made to any firewall.")
+    else:
+        print(f"\n[!] VERIFY ALL SCORED SERVICES ARE STILL WORKING")
+        print(f"[!] If anything broke, remove the profile group from that rule via Web UI")
 
 
 if __name__ == "__main__":
