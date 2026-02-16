@@ -32,5 +32,11 @@
         {"name": "example-ftp",  "ip": "<IP>", "ports": ["21"],  "app": "ftp"}
     ],
 
-    "_scored_services_help": "Delete the examples above and add one entry per scored service from the team packet. The 'app' field is the PAN-OS App-ID name. Common ones: dns, web-browsing, ssl, ssh, smtp, pop3, ftp, imap, mysql, ms-sql-s, ping."
+    "_scored_services_help": "Delete the examples above and add one entry per scored service from the team packet. The 'app' field is the PAN-OS App-ID name. Common ones: dns, web-browsing, ssl, ssh, smtp, pop3, ftp, imap, mysql, ms-sql-s, ping.",
+
+    "blocked_inbound_ports": {
+        "_help": "Ports blocked from OUTSIDE before scored-service allow rules. Scoring subnet (Rule 1) is above this and is unaffected. Remove any port here if it turns out to be a scored service.",
+        "tcp": [445, 3389, 5985, 5986, 23, 137, 138, 139],
+        "udp": [137, 138, 161, 162]
+    }
 }

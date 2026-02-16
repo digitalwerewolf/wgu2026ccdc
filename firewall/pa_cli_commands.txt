@@ -230,6 +230,58 @@ commit
 
 
 # ========================
+# PHASE 4b: BLOCK DANGEROUS PORTS
+# ========================
+# These are Red Team's favorite lateral movement/exploitation ports.
+# This deny rule sits ABOVE the scored service allow rules.
+# The Allow-Scoring rule (Phase 4) is above this, so the scoring
+# engine still has full access. This blocks everyone ELSE.
+#
+# What's blocked:
+#   SMB (445) — EternalBlue, PsExec, lateral movement, hash theft
+#   RDP (3389) — brute force, BlueKeep, session hijacking
+#   WinRM (5985/5986) — remote PowerShell execution
+#   Telnet (23) — cleartext credentials, trivial exploitation
+#   NetBIOS (137-139) — legacy name resolution abuse, enumeration
+#   SNMP (161-162) — community string attacks, MIB enumeration
+#
+# If any of these turns out to be a scored service (very unlikely),
+# remove that port from the block list.
+
+configure
+
+# Create service objects for each dangerous port
+set service svc-block-tcp-445 protocol tcp port 445
+set service svc-block-tcp-3389 protocol tcp port 3389
+set service svc-block-tcp-5985 protocol tcp port 5985
+set service svc-block-tcp-5986 protocol tcp port 5986
+set service svc-block-tcp-23 protocol tcp port 23
+set service svc-block-tcp-137 protocol tcp port 137
+set service svc-block-tcp-138 protocol tcp port 138
+set service svc-block-tcp-139 protocol tcp port 139
+set service svc-block-udp-137 protocol udp port 137
+set service svc-block-udp-138 protocol udp port 138
+set service svc-block-udp-161 protocol udp port 161
+set service svc-block-udp-162 protocol udp port 162
+
+# Group them
+set service-group Dangerous-Ports members [ svc-block-tcp-445 svc-block-tcp-3389 svc-block-tcp-5985 svc-block-tcp-5986 svc-block-tcp-23 svc-block-tcp-137 svc-block-tcp-138 svc-block-tcp-139 svc-block-udp-137 svc-block-udp-138 svc-block-udp-161 svc-block-udp-162 ]
+
+# Create the deny rule with logging (both start and end for visibility)
+set rulebase security rules Block-Dangerous-Inbound from any to any source any destination any application any service Dangerous-Ports action deny log-start yes log-end yes
+
+# IMPORTANT: Move it above the scored service allow rules.
+# If you used pa_deploy.py, it's already in the right order.
+# If you created rules manually, move it now:
+# move rulebase security rules Block-Dangerous-Inbound before <YOUR_FIRST_SCORED_SVC_RULE>
+
+commit
+
+# >>> Check the threat log for hits on this rule: <<<
+# show log traffic | match Block-Dangerous
+
+
+# ========================
 # PHASE 5: DISABLE ALLOW-ALL
 # ========================
 

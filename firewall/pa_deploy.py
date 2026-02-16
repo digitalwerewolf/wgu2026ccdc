@@ -190,6 +190,20 @@ def members(items):
     """Build <member>x</member><member>y</member> from a list."""
     return "".join(f"<member>{i}</member>" for i in items)
 
+def service_xpath(svc_name):
+    """Build the xpath for a custom service object."""
+    base = "/config/devices/entry[@name='localhost.localdomain']"
+    return f"{base}/vsys/entry[@name='vsys1']/service/entry[@name='{svc_name}']"
+
+def build_service(protocol, port):
+    """Build XML element for a custom service object (tcp or udp)."""
+    return f"<protocol><{protocol}><port>{port}</port></{protocol}></protocol>"
+
+def service_group_xpath(grp_name):
+    """Build the xpath for a service group."""
+    base = "/config/devices/entry[@name='localhost.localdomain']"
+    return f"{base}/vsys/entry[@name='vsys1']/service-group/entry[@name='{grp_name}']"
+
 def build_rule(name, from_z, to_z, src, dst, app, svc, action,
                log_end=True, log_start=False, profile_group=None, disabled=False):
     """Build the XML element string for a security rule."""
@@ -317,14 +331,92 @@ def deploy_from_config(config, dry_run=False):
             src=["any"], dst=infra_ips,
             app=["any"], svc=["any"], action="allow")
 
-    # --- Rule 5: Allow all scored services (broad) ---
+    # --- Rule 5: Block dangerous inbound ports (BEFORE scored service allow) ---
+    # These are lateral movement / exploitation ports that Red Team loves.
+    # The Allow-Scoring rule (Rule 1) is above this, so the scoring engine
+    # still has full access. This blocks everyone ELSE from hitting these ports.
+    blocked = config.get("blocked_inbound_ports", {})
+    blocked_tcp = blocked.get("tcp", [445, 3389, 5985, 5986, 23, 137, 138, 139])
+    blocked_udp = blocked.get("udp", [137, 138, 161, 162])
+
+    if blocked_tcp or blocked_udp:
+        print("\n  [*] Creating service objects for blocked dangerous ports...")
+        svc_names = []
+
+        for port in blocked_tcp:
+            svc_name = f"svc-block-tcp-{port}"
+            fw.set_config(service_xpath(svc_name), build_service("tcp", port))
+            svc_names.append(svc_name)
+            print(f"    + {svc_name}")
+
+        for port in blocked_udp:
+            svc_name = f"svc-block-udp-{port}"
+            fw.set_config(service_xpath(svc_name), build_service("udp", port))
+            svc_names.append(svc_name)
+            print(f"    + {svc_name}")
+
+        # Create a service group to hold all blocked port objects
+        grp_element = f"<members>{members(svc_names)}</members>"
+        fw.set_config(service_group_xpath("Dangerous-Ports"), grp_element)
+        print(f"    + Service group: Dangerous-Ports ({len(svc_names)} ports)")
+
+        # Create the deny rule
+        add_rule("Block-Dangerous-Inbound",
+            from_z=["any"], to_z=["any"],
+            src=["any"], dst=["any"],
+            app=["any"], svc=["Dangerous-Ports"], action="deny",
+            log_end=True, log_start=True)
+        print(f"    Blocked TCP: {blocked_tcp}")
+        print(f"    Blocked UDP: {blocked_udp}")
+
+    # --- Rule 6: Allow scored services (per-service with specific ports) ---
+    # Create individual per-service rules with ONLY the ports each service needs.
+    # This replaces the old "any/any to scored IPs" approach.
+    print("\n  [*] Creating per-service allow rules...")
+    per_svc_count = 0
+    for svc_entry in services:
+        svc_name = svc_entry.get("name", "")
+        svc_ip = svc_entry.get("ip", "")
+        svc_ports = svc_entry.get("ports", [])
+        svc_app = svc_entry.get("app", "any")
+
+        if not svc_ip or "<" in svc_ip:
+            continue
+
+        # Create a custom service object for this scored service's ports
+        svc_obj_names = []
+        for port in svc_ports:
+            obj_name = f"svc-scored-{svc_name}-tcp-{port}"
+            fw.set_config(service_xpath(obj_name), build_service("tcp", port))
+            svc_obj_names.append(obj_name)
+
+        # Also create a UDP version for DNS
+        if svc_app in ("dns",) and "53" in svc_ports:
+            obj_name = f"svc-scored-{svc_name}-udp-53"
+            fw.set_config(service_xpath(obj_name), build_service("udp", "53"))
+            svc_obj_names.append(obj_name)
+
+        if svc_obj_names:
+            rule_name = f"Allow-Svc-{svc_name}"
+            add_rule(rule_name,
+                from_z=["any"], to_z=["any"],
+                src=["any"], dst=[svc_ip],
+                app=["any"], svc=svc_obj_names, action="allow")
+            per_svc_count += 1
+
+    if per_svc_count > 0:
+        print(f"    Created {per_svc_count} per-service rules")
+
+    # --- Rule 7: Allow all scored services (broad fallback) ---
+    # This is a safety net in case per-service rules miss something.
+    # Disable this once you've confirmed per-service rules cover everything.
     if service_ips:
-        add_rule("Allow-Scored-Inbound",
+        add_rule("Allow-Scored-Broad-DISABLE-ME",
             from_z=["any"], to_z=["any"],
             src=["any"], dst=service_ips,
             app=["any"], svc=["any"], action="allow")
 
-    # --- Rule 6: Outbound from all internal systems to infra ---
+    # --- Rule 8: Outbound from all internal systems to infra ---
     if infra_ips:
         add_rule("Allow-Outbound-Infra",
             from_z=["any"], to_z=["any"],
@@ -349,11 +441,14 @@ def deploy_from_config(config, dry_run=False):
     else:
         print(f"\n[!] NEXT STEPS:")
         print(f"    1. VERIFY ALL SCORED SERVICES from the External View VM")
-        print(f"    2. If everything works, disable Allow-All-Temp via CLI:")
+        print(f"    2. If everything works, disable the broad fallback rule:")
         print(f"       configure")
+        print(f"       set rulebase security rules Allow-Scored-Broad-DISABLE-ME disabled yes")
+        print(f"       commit")
+        print(f"    3. Also disable Allow-All-Temp:")
         print(f"       set rulebase security rules Allow-All-Temp disabled yes")
         print(f"       commit")
-        print(f"    3. Run pa_phase2_profiles.py to add threat prevention")
+        print(f"    4. Run pa_phase2_profiles.py to add threat prevention")
 
 
 def deploy_minimal(fw_ip, password, team_num):

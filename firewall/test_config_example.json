@@ -37,5 +37,10 @@
         {"name": "helpdesk",  "ip": "10.50.50.54",  "ports": ["80"],  "app": "web-browsing"},
         {"name": "remote-web","ip": "172.16.50.11", "ports": ["80"],  "app": "web-browsing"},
         {"name": "remote-ssh","ip": "172.16.50.12", "ports": ["22"],  "app": "ssh"}
-    ]
+    ],
+
+    "blocked_inbound_ports": {
+        "tcp": [445, 3389, 5985, 5986, 23, 137, 138, 139],
+        "udp": [137, 138, 161, 162]
+    }
 }
